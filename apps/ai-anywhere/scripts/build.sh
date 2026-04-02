@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+# Resolve through symlinks so this script works when invoked via a symlink
+# (e.g. anywhere/examples/ai-anywhere/scripts/build.sh -> here).
+REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+REPO_ROOT="$(cd "$(dirname "$REAL_SCRIPT")/../../.." && pwd)"
 APP_DIR="$REPO_ROOT/apps/ai-anywhere"
 RUNTIME_DIR="$APP_DIR/runtime"
 EXT_DIR="$APP_DIR/extension"
