@@ -65,20 +65,20 @@ cp "$ASSETS_DIR/content.css"     "$DIST_DIR/src/content.css"
 
 cp -r "$VIEWS_DIR/." "$DIST_DIR/views/"
 
-# Generate manifest.json from anywhere.toml + Cargo.toml version
+# Generate manifest.json from webext.toml + Cargo.toml version
 python3 - "$APP_DIR" <<'PY'
 import sys, json, re, pathlib
 app = pathlib.Path(sys.argv[1])
 # Parse version from runtime/Cargo.toml (simple regex, no TOML parser needed)
 cargo_src = (app / "runtime/Cargo.toml").read_text()
 version = re.search(r'^version\s*=\s*"([^"]+)"', cargo_src, re.M).group(1)
-# Parse anywhere.toml with python tomllib (3.11+) or tomli
+# Parse webext.toml with python tomllib (3.11+) or tomli
 try:
     import tomllib
-    cfg = tomllib.loads((app / "anywhere.toml").read_text())
+    cfg = tomllib.loads((app / "webext.toml").read_text())
 except ImportError:
     import tomli as tomllib
-    cfg = tomllib.loads((app / "anywhere.toml").read_text())
+    cfg = tomllib.loads((app / "webext.toml").read_text())
 app_sec = cfg.get("app", {})
 perms_sec = cfg.get("permissions", {})
 host = perms_sec.get("host", ["<all_urls>"])
