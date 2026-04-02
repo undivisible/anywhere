@@ -1,5 +1,0 @@
-[app]
-id = "quicknote"
-name = "quicknote"
-frontend_plugin = "crepuscularity"
-entry = "views/ui.crepus#NoteList"
