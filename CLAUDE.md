@@ -4,38 +4,67 @@ App authors write **Rust + `.crepus` only**. No hand-written JS.
 
 ## Scope
 
-- `apps/ai-anywhere` — AI widget renderer: scans AI assistant pages for code blocks
-- `apps/quicknote` — WASM-driven popup note-taker
+Single extension at the repo root:
+- `runtime/src/lib.rs` — all WASM logic
+- `views/popup.crepus` — 3-view popup (main / help / crepus syntax reference)
+- `views/ui.crepus` — shared crepus components
+- `webext.toml` — extension metadata and capabilities
 
 ## Dependencies
 
-Framework crates live in `../anywhere/crates/`. Both repos must be checked out
+Framework crates live in `../crepuscularity/crates/`. Both repos must be checked out
 side-by-side for Cargo path deps to resolve.
 
 ## Build
 
 ```bash
-bash apps/ai-anywhere/scripts/build.sh
-bash apps/quicknote/scripts/build.sh
+crepus webext build
+```
+
+Produces `dist/unpacked/`. Install the CLI first:
+
+```bash
+cargo install --path ../crepuscularity/crates/crepuscularity-cli
 ```
 
 ## Rules
 
 - All extension logic stays in Rust + `.crepus`.
 - The JS-visible API surface is only `#[wasm_bindgen]`-exported functions.
-- Do not add handwritten JavaScript inside `apps/`.
-- Framework JS assets come from `../anywhere/crates/anywhere-webext/assets/`.
-  Update the framework, not the apps, if browser bootstrap needs to change.
+- Do not add handwritten JavaScript inside this repo.
+- Framework JS assets come from `../crepuscularity/crates/crepuscularity-webext/assets/`.
+  Update the framework, not this repo, if browser bootstrap needs to change.
 
-## WASM-driven popup protocol
+## Pre-rendered popup protocol
 
-Apps that export `render_popup(state: JsValue) -> Result<JsValue, JsValue>` get
-the full WASM-driven popup loop from the framework `popup.js`:
+`crepus webext build` calls `prerender_popup_html` in the CLI, which renders
+`views/popup.crepus` into three static HTML views at build time:
 
-1. `popup.js` calls `render_popup(storage_state)` on startup and after each action.
-2. `render_popup` returns `{ html }` — the full popup innerHTML.
-3. Click events on `[data-action]` elements call `handle_popup_action(action, data)`.
-4. `handle_popup_action` returns `{ storage_op? }` — optional storage mutation.
-5. `popup.js` applies the storage op and re-renders.
+| View div id   | Rendered with               |
+|---------------|-----------------------------|
+| `view-main`   | `show_help=false, show_crepus=false` |
+| `view-help`   | `show_help=true,  show_crepus=false` |
+| `view-crepus` | `show_help=false, show_crepus=true`  |
 
-Supported `storage_op` types: `push`, `remove`, `set`.
+`popup.js` (framework) shows/hides the correct div on `data-action` clicks.
+No WASM is loaded in the popup context — it opens instantly from static HTML.
+
+The `{system_prompt}` context variable is injected by the CLI from the
+`SYSTEM_PROMPT` const in `crepuscularity-cli/src/webext.rs`.
+
+## handle_popup_action routes
+
+| action           | storage_op                                    |
+|------------------|-----------------------------------------------|
+| `set-enabled`    | `set` → `enabled` (bool, sync)               |
+| `set-auto-render`| `set` → `autoRender` (bool, sync)            |
+| `show-help`      | `set` → `showHelp: true` (local)             |
+| `hide-help`      | `set` → `showHelp: false` (local)            |
+| `show-crepus`    | `set` → `showCrepus: true` (local)           |
+| `hide-crepus`    | `set` → `showCrepus: false` (local)          |
+
+`copy-prompt` is handled entirely in `popup.js` via the Clipboard API (no WASM round-trip).
+
+## Supported storage_op types
+
+`push`, `remove`, `set` — applied by framework `popup.js`.
