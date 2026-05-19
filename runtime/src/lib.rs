@@ -497,6 +497,14 @@ pub fn handle_popup_action(action: &str, data: JsValue) -> Result<JsValue, JsVal
     .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
+/// Entry point for popup UI initialization.
+/// The popup is pre-rendered at build time, so this is minimal.
+#[wasm_bindgen]
+pub fn popup_main() {
+    // Popup UI is pre-rendered from popup.crepus at build time.
+    // No WASM initialization needed here.
+}
+
 /// App metadata for the settings popup.
 #[wasm_bindgen]
 pub fn app_manifest() -> Result<JsValue, JsValue> {
