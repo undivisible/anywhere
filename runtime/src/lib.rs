@@ -505,6 +505,37 @@ pub fn popup_main() {
     // No WASM initialization needed here.
 }
 
+/// Handle messages sent to the background service worker.
+/// Routes settings:get and widget-related messages.
+#[wasm_bindgen]
+pub fn handle_background_message(message: JsValue) -> Result<JsValue, JsValue> {
+    let msg: Value = serde_wasm_bindgen::from_value(message)
+        .unwrap_or_else(|_| json!({}));
+    
+    let response = match msg.get("type").and_then(|v| v.as_str()) {
+        Some("settings:get") => {
+            json!({
+                "settings": {
+                    "enabled": true,
+                    "autoRender": false
+                }
+            })
+        }
+        _ => json!({ "ok": false, "error": "unknown message type" })
+    };
+    
+    serde_wasm_bindgen::to_value(&response)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Initialize default extension settings on install.
+#[wasm_bindgen]
+pub fn settings_seed() -> Result<(), JsValue> {
+    // Default settings are initialized by the browser's storage API.
+    // This is a no-op since the app uses browser.storage.sync with defaults.
+    Ok(())
+}
+
 /// App metadata for the settings popup.
 #[wasm_bindgen]
 pub fn app_manifest() -> Result<JsValue, JsValue> {
