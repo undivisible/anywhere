@@ -5,9 +5,95 @@ use crepuscularity_web::render_from_files;
 use crepuscularity_webext::{
     build_frame_doc, json_to_template, BrowserProgram, JsExpr, MessagePayload, StorageArea,
 };
+use js_sys::{Object, Reflect};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
+
+fn wasm_object(pairs: &[(&str, JsValue)]) -> Result<JsValue, JsValue> {
+    let obj = Object::new();
+    for (key, value) in pairs {
+        Reflect::set(&obj, &JsValue::from_str(key), value)
+            .map_err(|_| JsValue::from_str("failed to build wasm response object"))?;
+    }
+    Ok(obj.into())
+}
+
+fn set_opt_str(obj: &Object, key: &str, value: &Option<String>) -> Result<(), JsValue> {
+    if let Some(v) = value {
+        Reflect::set(obj, &JsValue::from_str(key), &JsValue::from_str(v))
+            .map_err(|_| JsValue::from_str("failed to set wasm object field"))?;
+    }
+    Ok(())
+}
+
+fn ui_lang_str(lang: UiLang) -> &'static str {
+    match lang {
+        UiLang::Crepus => "crepus",
+        UiLang::Html => "html",
+        UiLang::Builtin => "builtin",
+    }
+}
+
+fn script_lang_str(lang: ScriptLang) -> &'static str {
+    match lang {
+        ScriptLang::Js => "js",
+        ScriptLang::Mermaid => "mermaid",
+        ScriptLang::Latex => "latex",
+        ScriptLang::Other => "other",
+    }
+}
+
+fn widget_to_js(w: &AnywhereWidget) -> Result<JsValue, JsValue> {
+    let obj = Object::new();
+    set_opt_str(&obj, "id", &w.id)?;
+    set_opt_str(&obj, "widget_type", &w.widget_type)?;
+    set_opt_str(&obj, "title", &w.title)?;
+    set_opt_str(&obj, "data", &w.data)?;
+    if let Some(ui) = &w.ui {
+        let ui_obj = Object::new();
+        Reflect::set(
+            &ui_obj,
+            &JsValue::from_str("lang"),
+            &JsValue::from_str(ui_lang_str(ui.lang.clone())),
+        )
+        .map_err(|_| JsValue::from_str("failed to set ui.lang"))?;
+        Reflect::set(
+            &ui_obj,
+            &JsValue::from_str("source"),
+            &JsValue::from_str(&ui.source),
+        )
+        .map_err(|_| JsValue::from_str("failed to set ui.source"))?;
+        Reflect::set(&obj, &JsValue::from_str("ui"), &ui_obj.into())
+            .map_err(|_| JsValue::from_str("failed to set ui"))?;
+    }
+    if let Some(script) = &w.script {
+        let script_obj = Object::new();
+        Reflect::set(
+            &script_obj,
+            &JsValue::from_str("lang"),
+            &JsValue::from_str(script_lang_str(script.lang.clone())),
+        )
+        .map_err(|_| JsValue::from_str("failed to set script.lang"))?;
+        Reflect::set(
+            &script_obj,
+            &JsValue::from_str("source"),
+            &JsValue::from_str(&script.source),
+        )
+        .map_err(|_| JsValue::from_str("failed to set script.source"))?;
+        Reflect::set(&obj, &JsValue::from_str("script"), &script_obj.into())
+            .map_err(|_| JsValue::from_str("failed to set script"))?;
+    }
+    Ok(obj.into())
+}
+
+fn widgets_to_js(widgets: &[AnywhereWidget]) -> Result<JsValue, JsValue> {
+    let arr = js_sys::Array::new();
+    for w in widgets {
+        arr.push(&widget_to_js(w)?);
+    }
+    Ok(arr.into())
+}
 
 // ---------------------------------------------------------------------------
 // App-specific embedded assets (compiled into the WASM binary)
@@ -124,8 +210,8 @@ struct FrameDocRequest {
 
 #[derive(Deserialize)]
 struct AnywhereFrameDocRequest {
+    widget: AnywhereWidget,
     #[serde(default)] unocss: String,
-    #[serde(flatten)] widget: AnywhereWidget,
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +418,33 @@ fn finalize(spec: &WidgetSpec, idx: usize) -> WidgetSpec {
 // Anywhere widget frame doc
 // ---------------------------------------------------------------------------
 
+const WIDGET_FRAME_CSS: &str = r#"
+.app { max-width: 52rem; }
+.heading { font-size: 1.35rem; font-weight: 700; margin: 0 0 0.5rem; }
+.stats { margin-bottom: 0.75rem; opacity: 0.85; }
+.card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.name { font-weight: 600; }
+.badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.badge.green { background: #dcfce7; color: #166534; }
+.badge.yellow { background: #fef9c3; color: #854d0e; }
+button.primary, .primary { display: inline-block; margin-top: 8px; padding: 8px 14px; border-radius: 999px; border: 2px solid #174c63; background: #174c63; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.notice, .success { margin-top: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; }
+.notice { background: #f3f4f6; }
+.success { background: #dcfce7; color: #166534; }
+"#;
+
+fn enrich_widget_context(ctx: &mut TemplateContext, data: &Value) {
+    if let Some(workouts) = data.get("workouts").and_then(|w| w.as_array()) {
+        let completed = workouts
+            .iter()
+            .filter(|w| w.get("done").and_then(|d| d.as_bool()) == Some(true))
+            .count();
+        ctx.set("completed", completed as i64);
+        ctx.set("total", workouts.len() as i64);
+    }
+}
+
 fn anywhere_frame_doc_parts(widget: &AnywhereWidget) -> (String, String, String) {
     let data: Value = widget.data
         .as_deref()
@@ -339,7 +452,7 @@ fn anywhere_frame_doc_parts(widget: &AnywhereWidget) -> (String, String, String)
         .unwrap_or_else(|| json!({}));
 
     let mut html = String::new();
-    let css = String::new();
+    let css = WIDGET_FRAME_CSS.to_string();
     let mut js = String::new();
 
     if let Some(ui) = &widget.ui {
@@ -354,7 +467,8 @@ fn anywhere_frame_doc_parts(widget: &AnywhereWidget) -> (String, String, String)
                         ctx.set(k, json_to_template(v.clone()));
                     }
                 }
-                match render_from_files(&files, "__ai_widget__#Widget", &ctx) {
+                enrich_widget_context(&mut ctx, &data);
+                match render_from_files(&files, "__ai_widget__", &ctx) {
                     Ok(h) => html = h,
                     Err(e) => {
                         html = format!("<pre style=\"color:red\">Crepus render error: {e}</pre>");
@@ -375,7 +489,9 @@ fn anywhere_frame_doc_parts(widget: &AnywhereWidget) -> (String, String, String)
                 html = format!("<div class=\"latex\">{}</div>", script.source);
                 js = "import('https://cdn.jsdelivr.net/npm/katex/dist/katex.mjs').then(m=>{document.querySelectorAll('.latex').forEach(el=>m.default.render(el.textContent,el,{throwOnError:false}));});".to_string();
             }
-            ScriptLang::Js | ScriptLang::Other => { js = script.source.clone(); }
+            ScriptLang::Js | ScriptLang::Other => {
+                // Widgets are crepus-only; user JS blocks are ignored at runtime.
+            }
         }
     }
 
@@ -388,7 +504,7 @@ fn anywhere_frame_doc_parts(widget: &AnywhereWidget) -> (String, String, String)
 
 #[wasm_bindgen]
 pub fn runtime_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    format!("{}+plain-js", env!("CARGO_PKG_VERSION"))
 }
 
 /// Render a `.crepus` template. Views in `views/` are embedded in the WASM
@@ -407,8 +523,7 @@ pub fn render_frontend(request: JsValue) -> Result<JsValue, JsValue> {
     files.extend(req.files);
     let html = render_from_files(&files, &req.entry, &ctx)
         .map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&json!({ "html": html }))
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    wasm_object(&[("html", JsValue::from_str(&html))])
 }
 
 /// Build the srcdoc for a widget iframe.
@@ -421,8 +536,23 @@ pub fn render_frame_doc(request: JsValue) -> Result<JsValue, JsValue> {
         &req.html, &req.css, &req.js, &req.unocss,
         "<p>Widget had no HTML payload.</p>",
     );
-    serde_wasm_bindgen::to_value(&json!({ "srcdoc": srcdoc }))
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    wasm_object(&[("srcdoc", JsValue::from_str(&srcdoc))])
+}
+
+/// Render widget body parts for inline (shadow DOM) or iframe mounting.
+/// Input: `{ widget, unocss? }`. Returns: `{ html, css, js, needs_iframe }`.
+#[wasm_bindgen]
+pub fn render_anywhere_parts(request: JsValue) -> Result<JsValue, JsValue> {
+    let req: AnywhereFrameDocRequest = serde_wasm_bindgen::from_value(request)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let (html, css, js) = anywhere_frame_doc_parts(&req.widget);
+    let needs_iframe = !js.is_empty();
+    wasm_object(&[
+        ("html", JsValue::from_str(&html)),
+        ("css", JsValue::from_str(&css)),
+        ("js", JsValue::from_str(&js)),
+        ("needs_iframe", JsValue::from_bool(needs_iframe)),
+    ])
 }
 
 /// Build the srcdoc for an `<ai-anywhere>` widget iframe.
@@ -433,16 +563,14 @@ pub fn render_anywhere_frame_doc(request: JsValue) -> Result<JsValue, JsValue> {
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let (html, css, js) = anywhere_frame_doc_parts(&req.widget);
     let srcdoc = build_frame_doc(&html, &css, &js, &req.unocss, "<p>Widget had no content.</p>");
-    serde_wasm_bindgen::to_value(&json!({ "srcdoc": srcdoc }))
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    wasm_object(&[("srcdoc", JsValue::from_str(&srcdoc))])
 }
 
 /// Parse `<ai-anywhere>` widgets from an AI message.
 #[wasm_bindgen]
 pub fn extract_widgets(message: &str) -> Result<JsValue, JsValue> {
     let widgets = parse_anywhere_tags(message);
-    serde_wasm_bindgen::to_value(&widgets)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    widgets_to_js(&widgets)
 }
 
 /// Parse legacy ``` code-block widget specs from an AI message.
@@ -471,8 +599,10 @@ pub fn render_popup(state: JsValue) -> Result<JsValue, JsValue> {
     let files = embedded_files();
     let html = render_from_files(&files, "views/popup.crepus", &ctx)
         .map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&json!({ "html": html, "css": POPUP_CSS }))
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    wasm_object(&[
+        ("html", JsValue::from_str(&html)),
+        ("css", JsValue::from_str(POPUP_CSS)),
+    ])
 }
 
 /// Route a popup action.  Returns `{ storage_op? }`.
@@ -505,27 +635,34 @@ pub fn popup_main() {
     // No WASM initialization needed here.
 }
 
-/// Handle messages sent to the background service worker.
-/// Routes settings:get and widget-related messages.
+/// Content-script entry (called from framework `content.js` after WASM init).
+///
+/// DOM scan + code-block replacement: `crepuscularity-webext/assets/content.js`
+/// (copied to `dist/unpacked/src/content.js` on `crepus webext build`).
+///
+/// Rust WASM API used by that script:
+/// - `extract_widgets` / `extract_specs` — parse AI message text
+/// - `render_frontend` — shell HTML from `views/ui.crepus` (Panel, AnywhereShell)
+/// - `render_anywhere_frame_doc` / `render_frame_doc` — iframe srcdoc
+///
+/// Widget UI templates: `views/ui.crepus`. Popup: `views/popup.crepus`.
+#[wasm_bindgen]
+pub fn content_main() {}
+
+/// Handle background messages not handled in framework `background.js`
+/// (`settings:get` / `settings:set` stay in JS for sync storage access).
 #[wasm_bindgen]
 pub fn handle_background_message(message: JsValue) -> Result<JsValue, JsValue> {
     let msg: Value = serde_wasm_bindgen::from_value(message)
         .unwrap_or_else(|_| json!({}));
-    
-    let response = match msg.get("type").and_then(|v| v.as_str()) {
-        Some("settings:get") => {
-            json!({
-                "settings": {
-                    "enabled": true,
-                    "autoRender": false
-                }
-            })
-        }
-        _ => json!({ "ok": false, "error": "unknown message type" })
-    };
-    
-    serde_wasm_bindgen::to_value(&response)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    let _ = msg;
+    wasm_object(&[
+        ("ok", JsValue::from_bool(false)),
+        (
+            "error",
+            JsValue::from_str("unknown message type (use framework background.js routes)"),
+        ),
+    ])
 }
 
 /// Initialize default extension settings on install.
@@ -622,6 +759,34 @@ mod tests {
         assert!(parse_anywhere_tags("<ai-anywhere id=\"x\">no close").is_empty());
     }
 
+    #[test]
+    fn parses_workout_tracker_widget() {
+        let input = r#"<ai-anywhere type="widget" title="Workout Tracker">
+  <anywhere-ui lang="crepus">
+div app
+  $: let completed = {workouts.filter(w => w.done).length}
+  for workout in {workouts}
+    div card data-id={workout.id}
+      "{workout.name}"
+  </anywhere-ui>
+  <anywhere-data>
+{"title": "Weekly Workout Tracker", "workouts": [{"id": 1, "name": "Push Day", "done": true}]}
+  </anywhere-data>
+  <anywhere-script lang="js">
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action='toggle']");
+});
+  </anywhere-script>
+</ai-anywhere>"#;
+        let widgets = parse_anywhere_tags(input);
+        assert_eq!(widgets.len(), 1, "expected one widget");
+        let w = &widgets[0];
+        assert_eq!(w.title.as_deref(), Some("Workout Tracker"));
+        assert!(w.ui.is_some());
+        assert!(w.data.is_some());
+        assert!(w.script.is_some());
+    }
+
     // ── extract_widget_specs ─────────────────────────────────────────────────
 
     #[test]
@@ -666,5 +831,144 @@ mod tests {
     #[test]
     fn unknown_action_returns_empty() {
         assert!(call_action("bogus", json!({})).get("storage_op").is_none());
+    }
+
+    #[test]
+    fn render_anywhere_shell_from_embedded_ui() {
+        let ctx = TemplateContext::new();
+        let files = embedded_files();
+        let html = render_from_files(&files, "views/ui.crepus#AnywhereShell", &ctx)
+            .expect("AnywhereShell should render");
+        assert!(html.contains("data-role=\"frame-host\""));
+        assert!(!html.contains("data-action=\"render\""));
+        assert!(!html.contains("aa-title"));
+    }
+
+    #[test]
+    fn render_inline_crepus_widget_uses_template_not_component_file() {
+        let ui = r#"div app
+  for workout in {workouts}
+    div card
+      "{workout.name}""#;
+        let mut files = HashMap::new();
+        files.insert("__ai_widget__".to_string(), ui.to_string());
+        let mut ctx = TemplateContext::new();
+        ctx.set(
+            "workouts",
+            json_to_template(json!([{"name": "Push Day"}])),
+        );
+        let html = render_from_files(&files, "__ai_widget__", &ctx)
+            .expect("inline crepus should render as template");
+        assert!(
+            html.contains("Push Day") || html.contains("card"),
+            "unexpected html: {html}"
+        );
+    }
+
+    #[test]
+    fn render_anywhere_parts_returns_html() {
+        let input = include_str!("../tests/fixtures/workout_widget.html");
+        let widgets = parse_anywhere_tags(input);
+        let w = &widgets[0];
+        let (html, css, js) = anywhere_frame_doc_parts(w);
+        assert!(html.contains("Toggle"));
+        assert!(!css.is_empty());
+        assert!(js.is_empty());
+    }
+
+    #[test]
+    fn frame_doc_survives_json_roundtrip() {
+        let input = include_str!("../tests/fixtures/workout_widget.html");
+        let widgets = parse_anywhere_tags(input);
+        let json = serde_json::to_string(&widgets[0]).expect("json");
+        let widget: AnywhereWidget = serde_json::from_str(&json).expect("from json");
+        let (html, _, _) = anywhere_frame_doc_parts(&widget);
+        assert!(
+            html.contains("Toggle"),
+            "json roundtrip widget lost ui; html={html}"
+        );
+    }
+
+    #[test]
+    fn workout_frame_renders_cards_and_buttons() {
+        let input = r#"<ai-anywhere type="widget" title="Workout Tracker">
+  <anywhere-ui lang="crepus">
+div app
+  $: let completed = {workouts.filter(w => w.done).length}
+  $: let total = {workouts.length}
+
+  h1 heading
+    "{title}"
+
+  div stats
+    span
+      "Completed {completed}/{total}"
+
+  for workout in {workouts}
+    div card data-id={workout.id}
+      div row
+        span name
+          "{workout.name}"
+
+        if {workout.done}
+          span badge green
+            "Done"
+        else
+          span badge yellow
+            "Pending"
+
+      button primary
+        type="button"
+        data-action="toggle"
+        data-id={workout.id}
+        "Toggle"
+
+  match {completed === total}
+    true =>
+      div success
+        "All workouts completed."
+    _ =>
+      div notice
+        "Keep going."
+  </anywhere-ui>
+  <anywhere-data>
+{
+  "title": "Weekly Workout Tracker",
+  "workouts": [
+    { "id": 1, "name": "Push Day", "done": true },
+    { "id": 2, "name": "Pull Day", "done": false },
+    { "id": 3, "name": "Leg Day", "done": false }
+  ]
+}
+  </anywhere-data>
+</ai-anywhere>"#;
+        let widgets = parse_anywhere_tags(input);
+        let w = &widgets[0];
+        let (html, _, _) = anywhere_frame_doc_parts(w);
+        eprintln!("FRAME HTML:\n{html}");
+        assert!(
+            html.contains("Toggle") && html.contains("Push Day"),
+            "expected workout UI in frame, got: {html}"
+        );
+    }
+
+    #[test]
+    fn ignores_anywhere_script_js_blocks() {
+        let widget = AnywhereWidget {
+            id: None,
+            widget_type: Some("widget".into()),
+            title: Some("Test".into()),
+            ui: Some(AnywhereUi {
+                lang: UiLang::Html,
+                source: "<p>hi</p>".into(),
+            }),
+            script: Some(AnywhereScript {
+                lang: ScriptLang::Js,
+                source: "console.log('nope')".into(),
+            }),
+            data: None,
+        };
+        let (_, _, js) = anywhere_frame_doc_parts(&widget);
+        assert!(js.is_empty());
     }
 }

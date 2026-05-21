@@ -1,19 +1,17 @@
 # CLAUDE.md
 
-App authors write **Rust + `.crepus` only**. No hand-written JS.
+**anywhere** — browser extension. Authors: **Rust + `.crepus` only**. No hand-written JS in this repo.
 
 ## Scope
 
-Single extension at the repo root:
-- `runtime/src/lib.rs` — all WASM logic
-- `views/popup.crepus` — 3-view popup (main / help / crepus syntax reference)
-- `views/ui.crepus` — shared crepus components
-- `webext.toml` — extension metadata and capabilities
+- `runtime/src/lib.rs` — WASM: parse widgets, render shells/iframe, popup routes
+- `views/popup.crepus` — popup (main / help / crepus ref)
+- `views/ui.crepus` — `Panel`, `AnywhereShell`, etc.
+- `webext.toml` — manifest + capabilities
 
 ## Dependencies
 
-Framework crates live in `../crepuscularity/crates/`. Both repos must be checked out
-side-by-side for Cargo path deps to resolve.
+`../crepuscularity/crates/`. Side-by-side checkout for path deps.
 
 ## Build
 
@@ -21,24 +19,31 @@ side-by-side for Cargo path deps to resolve.
 crepus webext build
 ```
 
-Produces `dist/unpacked/`. Install the CLI first:
+→ `dist/unpacked/`. Install CLI first:
 
 ```bash
 cargo install --path ../crepuscularity/crates/crepuscularity-cli
 ```
 
+Reinstall CLI with `--force` after framework asset changes, then rebuild. Reload extension in Chrome.
+
 ## Rules
 
-- All extension logic stays in Rust + `.crepus`.
-- The JS-visible API surface is only `#[wasm_bindgen]`-exported functions.
-- Do not add handwritten JavaScript inside this repo.
-- Framework JS assets come from `../crepuscularity/crates/crepuscularity-webext/assets/`.
-  Update the framework, not this repo, if browser bootstrap needs to change.
+- Logic: Rust + `.crepus` only.
+- JS surface: `#[wasm_bindgen]` exports only.
+- No edit `dist/unpacked/` by hand — build copies framework assets.
+- Bootstrap DOM: `crepuscularity-webext/assets/content.js` (scan `<pre>`, call WASM). `content_main()` in Rust is stub for now.
 
-## Pre-rendered popup protocol
+## Content WASM API (called from framework `content.js`)
 
-`crepus webext build` calls `prerender_popup_html` in the CLI, which renders
-`views/popup.crepus` into three static HTML views at build time:
+- `extract_widgets` / `extract_specs` — parse message text
+- `render_frontend` — shell HTML from `views/ui.crepus`
+- `render_anywhere_frame_doc` / `render_frame_doc` — iframe `srcdoc`
+- `handle_popup_action` / `render_popup` — popup storage routes
+
+## Pre-rendered popup
+
+`crepus webext build` → `prerender_popup_html` → 3 static divs:
 
 | View div id   | Rendered with               |
 |---------------|-----------------------------|
@@ -46,13 +51,11 @@ cargo install --path ../crepuscularity/crates/crepuscularity-cli
 | `view-help`   | `show_help=true,  show_crepus=false` |
 | `view-crepus` | `show_help=false, show_crepus=true`  |
 
-`popup.js` (framework) shows/hides the correct div on `data-action` clicks.
-No WASM is loaded in the popup context — it opens instantly from static HTML.
+`popup.js` toggles views on `data-action`. No WASM in popup.
 
-The `{system_prompt}` context variable is injected by the CLI from the
-`SYSTEM_PROMPT` const in `crepuscularity-cli/src/webext.rs`.
+`{system_prompt}` from `SYSTEM_PROMPT` in `crepuscularity-cli/src/webext.rs`.
 
-## handle_popup_action routes
+## handle_popup_action
 
 | action           | storage_op                                    |
 |------------------|-----------------------------------------------|
@@ -63,8 +66,6 @@ The `{system_prompt}` context variable is injected by the CLI from the
 | `show-crepus`    | `set` → `showCrepus: true` (local)           |
 | `hide-crepus`    | `set` → `showCrepus: false` (local)          |
 
-`copy-prompt` is handled entirely in `popup.js` via the Clipboard API (no WASM round-trip).
+`copy-prompt`: `popup.js` Clipboard only.
 
-## Supported storage_op types
-
-`push`, `remove`, `set` — applied by framework `popup.js`.
+Storage ops: `push`, `remove`, `set`.

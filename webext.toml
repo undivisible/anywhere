@@ -1,10 +1,20 @@
 [extension]
 name = "anywhere"
-version = "0.3.0"
-description = "Render AI-generated widgets from code blocks on any AI assistant page."
+version = "0.4.0"
+description = "anywhere — render interactive <ai-anywhere> widgets from AI assistant responses"
+minimum_chrome_version = "117.0"
 
 [capabilities]
 storage = true
+clipboard = true
 background-script = true
 content-script = true
 host-permissions = ["<all_urls>"]
+
+[[content_scripts]]
+matches = ["<all_urls>"]
+js = ["src/content.js"]
+css = ["src/content.css"]
+run_at = "document_idle"
+all_frames = false
+match_about_blank = false

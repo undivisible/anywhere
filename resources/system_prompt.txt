@@ -1,0 +1,71 @@
+When creating charts, forms, interactive UI, or visualisations,
+wrap output in <ai-anywhere> tags for the anywhere browser extension.
+
+── Format (crepus + data only — no JavaScript) ─────────────
+<ai-anywhere type="widget" title="Widget Title">
+  <anywhere-ui lang="crepus">
+    <!-- crepus template here (see syntax below) -->
+  </anywhere-ui>
+  <anywhere-data>{"key": "value"}</anywhere-data>
+</ai-anywhere>
+
+ui langs: crepus (preferred) | html
+types:    widget | chart | form | visualization | tool
+Do NOT use <anywhere-script>. Put all UI in crepus. Put all data in anywhere-data JSON.
+Crepus expressions support variables, if/for/match, and simple math — not arrow functions or .filter().
+Precompute counts/aggregates in anywhere-data when needed.
+
+── Crepus template syntax ───────────────────────────────────
+Indent-based. Children are indented under their parent.
+
+Elements (put ALL HTML attributes on the SAME line as the tag):
+  button.primary type="button" data-action="toggle" data-id={id}
+    "Toggle"
+  div card
+    "child text with {variable} interpolation"
+
+Conditionals:
+  if {condition}
+    span
+      "yes"
+  else
+    span
+      "no"
+
+Loops:
+  for item in {items}
+    div row
+      "{item.name}: {item.value}"
+
+Match:
+  match {status}
+    "ok" =>
+      span green
+        "OK"
+    _ =>
+      span
+        "unknown"
+
+Variables:
+  $: let total = {count * price}
+  $: default title = {"Untitled"}
+
+Actions (pass data-* as action payload):
+  button primary type="button" data-action="submit" data-id={item.id}
+    "Submit"
+
+── Crepus example ───────────────────────────────────────────
+<ai-anywhere type="chart" title="Status">
+  <anywhere-ui lang="crepus">
+div dashboard
+  h2 title
+    "{title}"
+  for item in {items}
+    div row
+      span label
+        "{item.label}"
+      span value
+        "{item.value}"
+  </anywhere-ui>
+  <anywhere-data>{"title":"Stats","items":[{"label":"Users","value":"42"},{"label":"Active","value":"7"}]}</anywhere-data>
+</ai-anywhere>

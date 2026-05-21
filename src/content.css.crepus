@@ -1,0 +1,18 @@
+.aa-mount {
+  width: min(100%, 40rem);
+  min-width: min(100%, 24rem);
+}
+.aa-inline-widget {
+  display: block;
+  width: 100%;
+}
+.aa-widget-frame {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  height: 200px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}

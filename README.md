@@ -1,72 +1,65 @@
-# AI Anywhere
+# anywhere
 
-A browser extension that scans AI assistant pages (ChatGPT, Claude, Gemini, etc.) for special `<ai-anywhere>` tags in responses and renders them as interactive panels — charts, forms, visualisations, and more.
+Browser extension that finds `<ai-anywhere>` blocks in AI assistant replies (ChatGPT, Claude, Gemini, etc.) and renders them as interactive panels — charts, forms, trackers, and more.
 
-Built with [crepuscularity](https://github.com/semitechnological/crepuscularity): write Rust + `.crepus` templates, get a Manifest V3 extension. No hand-written JS.
+Built with [Crepuscularity](https://github.com/semitechnological/crepuscularity): Rust + `.crepus` templates, Manifest V3, minimal hand-written JS (framework bootstrap only).
 
 ## Install
 
-Load the unpacked extension from `dist/unpacked/` in `chrome://extensions` (Developer Mode).
+Load `dist/unpacked/` as an unpacked extension in `chrome://extensions` (Developer mode).
 
 ## Build
-
-Prerequisites:
 
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli
-cargo install --path ../crepuscularity/crates/crepuscularity-cli
+cargo install --path ../crepuscularity/crates/crepuscularity-cli --force
 ```
 
-Both repos must be checked out side-by-side (`anywhere/` and `crepuscularity/`).
-
-Then from this directory:
+Check out `anywhere/` and `crepuscularity/` side by side for path dependencies.
 
 ```bash
 crepus webext build
 # → dist/unpacked/
 ```
 
-## How it works
+Reinstall the CLI with `--force` after changing framework assets in `crepuscularity`, then rebuild and reload the extension.
 
-Add this to your AI's system prompt or custom instructions (the popup's Help page has a copy button):
+## Layout
 
-```
-When creating charts, forms, interactive UI, or visualisations,
-wrap output in <ai-anywhere> tags for the AI Anywhere browser extension.
+| Path | Role |
+| --- | --- |
+| `webext.toml` | Extension metadata, capabilities, content scripts (icons/pages auto-detected at build) |
+| `runtime/src/lib.rs` | WASM: parse widgets, render shells/iframe, popup storage routes |
+| `views/popup.crepus` | Popup (main / help / crepus reference) — pre-rendered at build |
+| `views/ui.crepus` | In-page shells (`AnywhereShell`, `Panel`, …) |
+| `resources/system_prompt.txt` | AI system-prompt snippet (injected into popup Help) |
+| `src/content.css.crepus` | Extra content-script styles (appended to framework CSS) |
+| `icons/` | Toolbar + extension icons (`icon16.png`, …) |
+| `dist/unpacked/` | Built extension (gitignored) |
 
+## AI prompt snippet
+
+Use the popup **Help** view (copy button) or this shape:
+
+```html
 <ai-anywhere type="widget" title="Widget Title">
   <anywhere-ui lang="crepus">
-    div dashboard
-      h2 title
+    div app
+      h1 heading
         "{title}"
       for item in {items}
         div row
-          span label
-            "{item.label}"
-          span value
-            "{item.value}"
+          "{item.name}"
   </anywhere-ui>
-  <anywhere-data>{"title":"Stats","items":[{"label":"Users","value":"42"}]}</anywhere-data>
+  <anywhere-data>{"title":"Example","items":[{"name":"A"}]}</anywhere-data>
 </ai-anywhere>
 ```
 
-Widgets appear below AI messages. Click **Render** to run them in a sandboxed iframe, or enable **Auto-render**.
-
-## Structure
-
-```
-runtime/src/lib.rs      — WASM exports (render_popup, handle_popup_action, extract_widgets, …)
-views/popup.crepus      — 3-view popup: main settings / help / crepus syntax reference
-views/ui.crepus         — shared crepus components
-webext.toml             — extension metadata and capability declarations
-dist/unpacked/          — built extension (gitignored)
-```
+Crepus only — no `<anywhere-script>`. Precompute counts in JSON; put HTML attributes on the same line as the tag.
 
 ## Architecture
 
-- All extension logic lives in Rust + `.crepus`. No hand-written JS.
-- `crepus webext build` compiles WASM, runs wasm-bindgen, generates `manifest.json`, copies framework JS assets, and pre-renders `popup.html` from `views/popup.crepus`.
-- The popup is pre-rendered at build time into three views (main / help / crepus syntax reference) — it opens instantly with no WASM needed in the popup context.
-- Widget iframes are rendered at runtime by the content script via the WASM `render_anywhere_frame_doc` export.
-- Framework JS lives in `../crepuscularity/crates/crepuscularity-webext/assets/`.
+- Widget logic: Rust (`extract_widgets`, `render_anywhere_frame_doc`, …) + `.crepus` UI.
+- DOM scan / code-block replace: framework `crepuscularity-webext/assets/content.js` (one `<pre>` → one panel).
+- Popup: static HTML from `views/popup.crepus`; settings via `background.js` + `chrome.storage.sync`.

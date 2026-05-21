@@ -1,0 +1,62 @@
+<ai-anywhere type="widget" title="Workout Tracker">
+  <anywhere-ui lang="crepus">
+motion.div app
+  $: let completed = {workouts.filter(w => w.done).length}
+  $: let total = {workouts.length}
+
+  h1 heading
+    "{title}"
+
+  div stats
+    span
+      "Completed {completed}/{total}"
+
+  for workout in {workouts}
+    div card data-id={workout.id}
+      div row
+        span name
+          "{workout.name}"
+
+        if {workout.done}
+          span badge green
+            "Done"
+        else
+          span badge yellow
+            "Pending"
+
+      button primary
+        type="button"
+        data-action="toggle"
+        data-id={workout.id}
+        "Toggle"
+
+  match {completed === total}
+    true =>
+      div success
+        "All workouts completed."
+    _ =>
+      div notice
+        "Keep going."
+  </anywhere-ui>
+
+  <anywhere-data>
+{
+  "title": "Weekly Workout Tracker",
+  "workouts": [
+    { "id": 1, "name": "Push Day", "done": true },
+    { "id": 2, "name": "Pull Day", "done": false },
+    { "id": 3, "name": "Leg Day", "done": false }
+  ]
+}
+  </anywhere-data>
+
+  <anywhere-script lang="js">
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action='toggle']");
+  if (!btn) return;
+
+  const id = Number(btn.dataset.id);
+  console.log("toggle workout", id);
+});
+  </anywhere-script>
+</ai-anywhere>
