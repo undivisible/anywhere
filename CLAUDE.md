@@ -7,7 +7,7 @@
 - `runtime/src/lib.rs` — WASM: parse widgets, render shells/iframe, popup routes
 - `views/popup.crepus` — popup (main / help / crepus ref)
 - `views/ui.crepus` — `Panel`, `AnywhereShell`, etc.
-- `webext.toml` — manifest + capabilities
+- `crepus.toml` — manifest + capabilities
 
 ## Dependencies
 

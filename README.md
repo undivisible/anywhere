@@ -29,7 +29,7 @@ Reinstall the CLI with `--force` after changing framework assets in `crepuscular
 
 | Path | Role |
 | --- | --- |
-| `webext.toml` | Extension metadata, capabilities, content scripts (icons/pages auto-detected at build) |
+| `crepus.toml` | Extension metadata, capabilities, content scripts (icons/pages auto-detected at build) |
 | `runtime/src/lib.rs` | WASM: parse widgets, render shells/iframe, popup storage routes |
 | `views/popup.crepus` | Popup (main / help / crepus reference) — pre-rendered at build |
 | `views/ui.crepus` | In-page shells (`AnywhereShell`, `Panel`, …) |
